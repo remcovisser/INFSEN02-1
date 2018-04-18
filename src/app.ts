@@ -4,19 +4,19 @@ import * as Immutable from "immutable"
 type Fun<a, b> = {
   f: (i: a) => b,
   then: <c>(g: Fun<b, c>) => Fun<a, c>
+  repeat: () => Fun<number, Fun<a, a>>
 }
 
 let Fun = function <a, b>(f: (val: a) => b): Fun<a, b> {
   return {
     f: f,
     then: function <c>(this: Fun<a, b>, g: Fun<b, c>): Fun<a, c> {
-      return then_operator(this, g)
+      return Fun<a, c>(a => g.f(this.f(a)))
+    },
+    repeat: function (this: Fun<a, a>): Fun<number, Fun<a, a>> {
+      return Fun<number, Fun<a, a>>(x => repeat(this, x))
     }
   }
-}
-
-let then_operator = function <a, b, c>(f: Fun<a, b>, g: Fun<b, c>): Fun<a, c> {
-  return Fun<a, c>(a => g.f(f.f(a)))
 }
 
 let id = <a>(): Fun<a, a> => Fun(x => x)
@@ -26,6 +26,11 @@ let double = Fun<number, number>(x => x * 2)
 let negate = Fun<boolean, boolean>(x => !x)
 let is_even = Fun<number, boolean>(x => x % 2 == 0)
 let convert = Fun<number, string>((x: number) => String(x))
+let square = Fun((x: number) => x * x)
+let isPositive = Fun((x: number) => x > 0)
+let isEven = Fun((x: number) => x % 2 == 0)
+let invert = Fun((x: number) => -x)
+let squareRoot = Fun((x: number) => Math.sqrt(x))
 
 let ifThenElse =
   function <a, b>(p: Fun<a, boolean>, _then: Fun<a, b>, _else: Fun<a, b>): Fun<a, b> {
@@ -39,19 +44,15 @@ let ifThenElse =
     })
   }
 
-let aa = ifThenElse(is_even, double, incr);
+let aa = ifThenElse(is_even, double, incr)
+let ab = aa.f(5);
+
+let ac = incr.then(is_even).f(5);
+let ad = incr.then(double).then(convert).f(5)
 
 
-let incr_then_double = incr.then(double)
-let incr_twice = incr.then(incr)
-let double_twice = double.then(double)
-let my_f = incr.then(is_even)
-
-
-let ab = incr.then(double).f(5);
-let ac = incr.then(double).then(convert).f(5)
-
-
+let repeat = <a>(f: Fun<a, a>, n: number): Fun<a, a> =>
+  (n <= 0) ? f : f.then(repeat(f, incr.f(n)))
 
 
 
@@ -63,18 +64,16 @@ let map_countainer = function <a, b>(f: Fun<a, b>): Fun<Countainer<a>, Countaine
 }
 
 let tick: Fun<Countainer<number>, Countainer<number>> = Fun(c => ({ ...c, counter: c.counter + 1 }))
-
 let incr_countainer: Fun<Countainer<number>, Countainer<number>> = map_countainer(incr)
 let is_countainer_even: Fun<Countainer<number>, Countainer<boolean>> = map_countainer(is_even)
 
 let countainer: Countainer<number> = { content: 3, counter: 0 }
 let ba = incr_countainer.f(countainer);
-let bb = incr_countainer.then(incr_countainer).then(tick).f(countainer);
-
 
 type Option<a> = { kind: "none" } | { kind: "some", value: a }
 let none = function <a>(): Option<a> { return { kind: "none" } }
 let some = function <a>(x: a): Option<a> { return { kind: "some", value: x } }
+let option: Option<number> = { kind: "some", value: 2 };
 
 let map_Option = function <a, b>(f: Fun<a, b>): Fun<Option<a>, Option<b>> {
   return Fun(x => x.kind == "none" ? none<b>() : some<b>(f.f(x.value)))
@@ -87,11 +86,8 @@ function printOption(x: Option<number>): string {
     return "there is no value"
 }
 
-let pipeline: Fun<Option<number>, Option<number>> = map_Option(incr.then(double.then(incr)))
-
-let option: Option<number> = { kind: "some", value: 2 };
-let ca = pipeline.f(option);
-
+let bb: Fun<Option<number>, Option<number>> = map_Option(incr.then(double.then(incr)))
+let ca = bb.f(option);
 
 type Id<a> = a
 let map_Id = <a, b>(f: Fun<a, b>): Fun<Id<a>, Id<b>> => f
@@ -131,6 +127,11 @@ let map_Constant = function <a, b, s>(f: Fun<a, b>): Fun<Constant<a, s>, Constan
     return x;
   })
 }
+
+let ce = map_Option(incr.then(double)).f(option);
+let cf = map_Option(incr).then(map_Option(double)).f(option);
+
+let cg = map_Option(incr).then(map_Option(incr))
 
 
 
@@ -184,18 +185,18 @@ let snd = <a, b>(): Fun<Pair<a, b>, b> => Fun(p => p.snd)
 let map_Pair = <a, b, a1, b1>(f: Fun<a, a1>, g: Fun<b, b1>): Fun<Pair<a, b>, Pair<a1, b1>> =>
   Fun(p => ({ fst: f.f(p.fst), snd: g.f(p.snd) }))
 
-
 type WithNum<a> = Pair<a, number>
+
 let map_WithNum = <a, b>(f: Fun<a, b>): Fun<WithNum<a>, WithNum<b>> =>
   map_Pair(f, id<number>())
-
-
 let unit_WithNum = <a>(): Fun<a, WithNum<a>> =>
   Fun(x => ({ fst: x, snd: 0 }));
 let join_WithNum = <a>(): Fun<WithNum<WithNum<a>>, WithNum<a>> =>
   Fun(x => ({ fst: x.fst.fst, snd: x.snd + x.fst.snd }))
 
 
+let ea: WithNum<number> = { fst: 10, snd: 30 }
+let eb = map_WithNum(incr).f(ea);
 
 
 // -------------- Week 5 -------------- //
@@ -270,6 +271,34 @@ let add_st = <s>(p: St<s, number>, q: St<s, number>): St<s, number> =>
     q.then(q_v =>
       unit_St(p_v + q_v)))
 
+
+
+type Producer<a> = Fun<Unit, a>
+type Reader<s, a> = Fun<s, a>
+type State<s, a> = Fun<s, Pair<a, s>>
+type RenderingBuffer = string
+type Renderer = State<RenderingBuffer, Unit>
+
+let render_nothing: Renderer = Fun(b => ({ fst: {}, snd: b }))
+let render_string = (s: string): Renderer => (Fun(b => ({ fst: {}, snd: b + s })))
+let render_asterisk = render_string("*")
+let render_space = render_string(" ")
+let render_newline = render_string("\n")
+
+
+// let repeat = <s, a>(n: number, f: (_: a) => State<s, a>): (_: a) => State<s, Unit> =>
+//   a => n == 0 ? unit_St(a) : f(a).then(a => repeat(n - 1, f).f(a))
+
+
+// let render_line = (n: number): Renderer =>
+//   repeat<RenderingBuffer, Unit>(n, _ => render_asterisk)({})
+
+// let render_square = (n: number): Renderer =>
+//   repeat<RenderingBuffer, Unit>(n, _ =>
+//     render_line(n).then(_ => render_newline)({}))
+
+
+// console.log(render_square(10).f("").fst)
 
 
 // -------------- Week 7 -------------- //
